@@ -221,7 +221,14 @@ const CollectionService = {
     },
     async get(ctx) {
       const { resourceUri: collectionUri, jsonContext } = ctx.params;
-      const page = ctx.params.page || ctx.meta.queryString?.page;
+      const beforeEq = ctx.params.beforeEq || ctx.meta.queryString?.beforeEq;
+      const afterEq = ctx.params.afterEq || ctx.meta.queryString?.afterEq;
+      let prevCursorUri, nextCursorUri;
+
+      if (beforeEq && afterEq) {
+        throw new MoleculerError('Cannot get a collection with both beforeEq and afterEq', 400, 'BAD_REQUEST');
+      }
+
       const webId = ctx.params.webId || ctx.meta.webId || 'anon';
       const localContext = await ctx.call('jsonld.context.get');
 
@@ -260,6 +267,26 @@ const CollectionService = {
         'semapps:sortOrder': options.sortOrder
       };
 
+      // Check if the cursor exists and get the sort predicate
+      if (beforeEq || afterEq) {
+        const cursorResult = await ctx.call('triplestore.query', {
+          query: `
+            PREFIX as: <https://www.w3.org/ns/activitystreams#>
+            SELECT ?itemExists ?cursorSortPredicate
+            WHERE {
+              BIND (EXISTS{ <${collectionUri}> as:items <${afterEq || beforeEq}> } AS ?itemExists)
+              <${afterEq || beforeEq}> <${options.sortPredicate}> ?cursorSortPredicate .
+            }
+          `,
+          accept: MIME_TYPES.JSON,
+          webId: 'system'
+        });
+        const itemExists = cursorResult[0]?.itemExists?.value === 'true';
+        const cursorSortPredicate = cursorResult[0]?.cursorSortPredicate?.value;
+        if (!itemExists) {
+          throw new MoleculerError(`Cursor not found: ${afterEq || beforeEq}`, 404, 'NOT_FOUND');
+        }
+      }
       // Caution: we must do a select query, because construct queries cannot be sorted
       const result = await ctx.call('triplestore.query', {
         query: `
@@ -270,6 +297,7 @@ const CollectionService = {
             OPTIONAL { 
               <${collectionUri}> as:items ?itemUri . 
               ${options.ordered ? `OPTIONAL { ?itemUri <${options.sortPredicate}> ?order . }` : ''}
+              #FILTER(?order >= ${/*cursorSortPredicate*/ ''})
             }
           }
           ${
@@ -279,44 +307,47 @@ const CollectionService = {
           }
         `,
         accept: MIME_TYPES.JSON,
-        webId
+        webId: 'system'
       });
 
-      const allItems = result.filter(node => node.itemUri).map(node => node.itemUri.value);
-      const numPages = !options.itemsPerPage
-        ? 1
-        : allItems.length > 0
-          ? Math.ceil(allItems.length / options.itemsPerPage)
-          : 0;
+      let allItems = result.filter(node => node.itemUri).map(node => node.itemUri.value);
+      const firstItemUri = allItems[0];
+      const lastItemUri = allItems[allItems.length - 1];
+
+      //use the cursor to filter the items and save the cursors URIs that will be needed for the next/prev links
+      if (beforeEq) {
+        const index = allItems.findIndex(item => item === beforeEq);
+        nextCursorUri = allItems[index + 1];
+        allItems = allItems.slice(0, index + 1);
+      } else if (afterEq) {
+        const index = allItems.findIndex(item => item === afterEq);
+        prevCursorUri = allItems[index - 1];
+        allItems = allItems.slice(index);
+      }
+
       let returnData = null;
 
-      if (page > 1 && page > numPages) {
-        throw new MoleculerError('Collection Not found', 404, 'NOT_FOUND');
-      } else if ((options.itemsPerPage && !page) || (page === 1 && allItems.length === 0)) {
+      if (options.itemsPerPage && !beforeEq && !afterEq) {
         // Pagination is enabled but no page is selected, return the collection
-        // OR the first page is selected but there is no item, return an empty page
         returnData = {
           '@context': localContext,
           id: collectionUri,
           type: options.ordered ? 'OrderedCollection' : 'Collection',
           ...collectionOptions,
-          first: numPages > 0 ? `${collectionUri}?page=1` : undefined,
-          last: numPages > 0 ? `${collectionUri}?page=${numPages}` : undefined,
-          totalItems: allItems ? allItems.length : 0
+          first: firstItemUri ? `${collectionUri}?afterEq=${encodeURIComponent(firstItemUri)}` : undefined,
+          last: lastItemUri ? `${collectionUri}?beforeEq=${encodeURIComponent(lastItemUri)}` : undefined
         };
       } else {
         let selectedItemsUris = allItems;
         let selectedItems = [];
         const itemsProp = options.ordered ? 'orderedItems' : 'items';
 
-        // If pagination is enabled, return a slice of the items
-        if (options.itemsPerPage) {
-          const start = (page - 1) * options.itemsPerPage;
-          selectedItemsUris = allItems.slice(start, start + options.itemsPerPage);
-        }
-
-        if (options.dereferenceItems) {
-          for (const itemUri of selectedItemsUris) {
+        // if (options.dereferenceItems) {
+        let itemUri = null;
+        do {
+          itemUri = afterEq ? allItems.shift() : allItems.pop();
+          //Shift returns undefined if the array is empty
+          if (itemUri) {
             try {
               selectedItems.push(
                 await ctx.call('ldp.resource.get', {
@@ -337,23 +368,34 @@ const CollectionService = {
               }
             }
           }
+        } while (selectedItems.length < options.itemsPerPage && itemUri);
 
+        // get the missing cursors for the next/prev links
+        if (beforeEq) {
+          // also reverse the items in this case (as we pop them in the loop, they are selected in reverse order)
+          selectedItems.reverse();
+          prevCursorUri = allItems.pop();
+        } else if (afterEq) {
+          nextCursorUri = allItems.shift();
+        }
+
+        if (!options.dereferenceItems) {
+          selectedItems = selectedItems.map(item => item.id);
+        } else {
           // Remove the @context from all items
           selectedItems = selectedItems.map(({ '@context': context, ...item }) => item);
-        } else {
-          selectedItems = selectedItemsUris;
         }
 
         if (options.itemsPerPage) {
           returnData = {
             '@context': localContext,
-            id: `${collectionUri}?page=${page}`,
+            // id: `${collectionUri}?page=${page}`,
+            id: `${collectionUri}`,
             type: options.ordered ? 'OrderedCollectionPage' : 'CollectionPage',
             partOf: collectionUri,
-            prev: page > 1 ? `${collectionUri}?page=${parseInt(page) - 1}` : undefined,
-            next: page < numPages ? `${collectionUri}?page=${parseInt(page) + 1}` : undefined,
-            [itemsProp]: selectedItems,
-            totalItems: allItems ? allItems.length : 0
+            prev: prevCursorUri ? `${collectionUri}?beforeEq=${encodeURIComponent(prevCursorUri)}` : undefined,
+            next: nextCursorUri ? `${collectionUri}?afterEq=${encodeURIComponent(nextCursorUri)}` : undefined,
+            [itemsProp]: selectedItems
           };
         } else {
           // No pagination, return the collection
