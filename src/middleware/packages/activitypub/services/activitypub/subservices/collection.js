@@ -342,7 +342,6 @@ const CollectionService = {
         let selectedItems = [];
         const itemsProp = options.ordered ? 'orderedItems' : 'items';
 
-        // if (options.dereferenceItems) {
         let itemUri = null;
         do {
           itemUri = afterEq ? allItems.shift() : allItems.pop();
@@ -389,8 +388,7 @@ const CollectionService = {
         if (options.itemsPerPage) {
           returnData = {
             '@context': localContext,
-            // id: `${collectionUri}?page=${page}`,
-            id: `${collectionUri}`,
+            id: `${collectionUri}?${beforeEq ? 'beforeEq' : 'afterEq'}=${encodeURIComponent(beforeEq || afterEq)}`,
             type: options.ordered ? 'OrderedCollectionPage' : 'CollectionPage',
             partOf: collectionUri,
             prev: prevCursorUri ? `${collectionUri}?beforeEq=${encodeURIComponent(prevCursorUri)}` : undefined,
@@ -404,8 +402,7 @@ const CollectionService = {
             id: collectionUri,
             type: options.ordered ? 'OrderedCollection' : 'Collection',
             ...collectionOptions,
-            [itemsProp]: selectedItems,
-            totalItems: allItems ? allItems.length : 0
+            [itemsProp]: selectedItems
           };
         }
       }
