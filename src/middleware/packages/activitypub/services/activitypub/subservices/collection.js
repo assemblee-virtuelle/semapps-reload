@@ -275,14 +275,12 @@ const CollectionService = {
             SELECT ?itemExists ?cursorSortPredicate
             WHERE {
               BIND (EXISTS{ <${collectionUri}> as:items <${afterEq || beforeEq}> } AS ?itemExists)
-              <${afterEq || beforeEq}> <${options.sortPredicate}> ?cursorSortPredicate .
             }
           `,
           accept: MIME_TYPES.JSON,
           webId: 'system'
         });
         const itemExists = cursorResult[0]?.itemExists?.value === 'true';
-        const cursorSortPredicate = cursorResult[0]?.cursorSortPredicate?.value;
         if (!itemExists) {
           throw new MoleculerError(`Cursor not found: ${afterEq || beforeEq}`, 404, 'NOT_FOUND');
         }
