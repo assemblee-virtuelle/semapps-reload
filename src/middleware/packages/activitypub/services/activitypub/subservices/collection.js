@@ -297,7 +297,6 @@ const CollectionService = {
             OPTIONAL { 
               <${collectionUri}> as:items ?itemUri . 
               ${options.ordered ? `OPTIONAL { ?itemUri <${options.sortPredicate}> ?order . }` : ''}
-              #FILTER(?order >= ${/*cursorSortPredicate*/ ''})
             }
           }
           ${
@@ -344,8 +343,8 @@ const CollectionService = {
 
         let itemUri = null;
         do {
-          itemUri = afterEq ? allItems.shift() : allItems.pop();
-          //Shift returns undefined if the array is empty
+          itemUri = beforeEq ? allItems.pop() : allItems.shift();
+          //shift or pop returns undefined if the array is empty
           if (itemUri) {
             try {
               selectedItems.push(
@@ -367,7 +366,7 @@ const CollectionService = {
               }
             }
           }
-        } while (selectedItems.length < options.itemsPerPage && itemUri);
+        } while ((selectedItems.length < options.itemsPerPage || !options.itemsPerPage) && itemUri);
 
         // get the missing cursors for the next/prev links
         if (beforeEq) {

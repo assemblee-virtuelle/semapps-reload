@@ -60,8 +60,7 @@ describe('Collections', () => {
       id: collectionUri,
       type: 'Collection',
       summary: 'My non-ordered collection',
-      'semapps:dereferenceItems': false,
-      totalItems: 0
+      'semapps:dereferenceItems': false
     });
   });
 
@@ -75,10 +74,7 @@ describe('Collections', () => {
       '@id': collectionUri,
       '@type': 'as:Collection',
       'as:summary': 'My non-ordered collection',
-      'http://semapps.org/ns/core#dereferenceItems': false,
-      'as:totalItems': expect.objectContaining({
-        '@value': 0
-      })
+      'http://semapps.org/ns/core#dereferenceItems': false
     });
   });
 
@@ -109,8 +105,7 @@ describe('Collections', () => {
       summary: 'My ordered collection',
       'semapps:dereferenceItems': false,
       'semapps:sortPredicate': 'as:published',
-      'semapps:sortOrder': 'semapps:DescOrder',
-      totalItems: 0
+      'semapps:sortOrder': 'semapps:DescOrder'
     });
   });
 
@@ -128,8 +123,7 @@ describe('Collections', () => {
       id: collectionUri,
       type: 'Collection',
       summary: 'My non-ordered collection',
-      items: items[0],
-      totalItems: 1
+      items: items[0]
     });
   });
 
@@ -162,8 +156,7 @@ describe('Collections', () => {
         type: 'Note',
         content: 'Contenu de ma note #0',
         name: 'Note #0'
-      },
-      totalItems: 1
+      }
     });
   });
 
@@ -180,9 +173,10 @@ describe('Collections', () => {
     expect(collection).toMatchObject({
       id: collectionUri,
       type: 'Collection',
-      summary: 'My non-ordered collection',
-      totalItems: 0
+      summary: 'My non-ordered collection'
     });
+
+    expect(collection.items).toBeUndefinedOrEmptyArray();
   });
 
   test('Items are sorted in descending order (default)', async () => {
@@ -195,6 +189,7 @@ describe('Collections', () => {
       collectionUri: orderedCollectionUri,
       item: items[0]
     });
+    console.log(`added ${items[0]} to collection ${orderedCollectionUri}`);
 
     await broker.call('activitypub.collection.add', {
       collectionUri: orderedCollectionUri,
@@ -212,8 +207,7 @@ describe('Collections', () => {
 
     expect(collection).toMatchObject({
       id: orderedCollectionUri,
-      orderedItems: [items[6], items[4], items[2], items[0]],
-      totalItems: 4
+      orderedItems: [items[6], items[4], items[2], items[0]]
     });
   });
 
@@ -255,8 +249,7 @@ describe('Collections', () => {
 
     expect(collection).toMatchObject({
       id: ascOrderedCollectionUri,
-      orderedItems: [items[0], items[2], items[4], items[6]],
-      totalItems: 4
+      orderedItems: [items[0], items[2], items[4], items[6]]
     });
   });
 
@@ -284,22 +277,20 @@ describe('Collections', () => {
 
     expect(collection).toMatchObject({
       id: paginatedCollectionUri,
-      first: `${paginatedCollectionUri}?page=1`,
-      last: `${paginatedCollectionUri}?page=3`,
-      totalItems: 10
+      first: `${paginatedCollectionUri}?afterEq=${encodeURIComponent(items[0])}`,
+      last: `${paginatedCollectionUri}?beforeEq=${encodeURIComponent(items[items.length - 1])}`
     });
 
     collection = await broker.call('activitypub.collection.get', {
       resourceUri: paginatedCollectionUri,
-      page: 1
+      afterEq: items[0]
     });
 
     expect(collection).toMatchObject({
-      id: `${paginatedCollectionUri}?page=1`,
+      id: `${paginatedCollectionUri}?afterEq=${encodeURIComponent(items[0])}`,
       type: 'CollectionPage',
       partOf: paginatedCollectionUri,
-      next: `${paginatedCollectionUri}?page=2`,
-      totalItems: 10
+      next: `${paginatedCollectionUri}?afterEq=${encodeURIComponent(items[4])}`
     });
     expect(collection.items).toHaveLength(4);
   });
