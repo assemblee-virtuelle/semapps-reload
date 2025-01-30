@@ -165,6 +165,39 @@ describe('Collections', () => {
     expect(collection.items).toBeUndefinedOrEmptyArray();
   });
 
+  test('Get collection with dereference items', async () => {
+    const collectionWithDereferenceUri = await broker.call('activitypub.collection.post', {
+      resource: {
+        type: 'Collection',
+        summary: 'My non-ordered collection with dereferenceItems: true',
+        'semapps:dereferenceItems': true
+      },
+      contentType: MIME_TYPES.JSON,
+      webId: 'system'
+    });
+
+    await broker.call('activitypub.collection.add', {
+      collectionUri: collectionWithDereferenceUri,
+      item: items[0]
+    });
+
+    const collection = await broker.call('activitypub.collection.get', {
+      resourceUri: collectionWithDereferenceUri
+    });
+
+    expect(collection).toMatchObject({
+      id: collectionWithDereferenceUri,
+      type: 'Collection',
+      summary: 'My non-ordered collection with dereferenceItems: true',
+      items: {
+        id: items[0],
+        type: 'Note',
+        content: 'Contenu de ma note #0',
+        name: 'Note #0'
+      }
+    });
+  });
+
   test('Items are sorted in descending order (default)', async () => {
     await broker.call('activitypub.collection.add', {
       collectionUri: orderedCollectionUri,
