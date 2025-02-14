@@ -44,13 +44,6 @@ module.exports = {
       put: 'keys.container.forbidden',
       patch: 'keys.container.forbidden',
       delete: 'keys.delete'
-    },
-    description: {
-      labelMap: {
-        en: 'Private Keys',
-        fr: 'Clés privées'
-      },
-      internal: true
     }
   },
   actions: {
